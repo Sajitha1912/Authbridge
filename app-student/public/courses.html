@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student · Courses</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Student App</div>
+    <nav id="nav"></nav>
+  </header>
+
+  <main>
+    <h1>Courses</h1>
+    <p class="sub">Catalogue and enrolments live in this app's own database (student.db). Only the sign-in is delegated.</p>
+
+    <div id="notice" class="notice"></div>
+
+    <div class="panel">
+      <h2>Catalogue</h2>
+      <div id="courses"><p class="hint">Loading…</p></div>
+    </div>
+
+    <div class="panel">
+      <h2>Your enrolments</h2>
+      <div id="enrollments"><p class="hint">Loading…</p></div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const notice = document.getElementById('notice');
+
+    async function loadCourses() {
+      const [{ courses }, { enrollments }] = await Promise.all([
+        api.request('/api/courses'),
+        api.request('/api/enrollments'),
+      ]);
+
+      const enrolledIds = new Set(
+        enrollments.filter((enrollment) => !enrollment.droppedAt).map((enrollment) => enrollment.courseId),
+      );
+
+      const target = document.getElementById('courses');
+      target.innerHTML =
+        '<table><thead><tr><th>Code</th><th>Course</th><th>Instructor</th><th>Credits</th><th>Seats</th><th></th></tr></thead><tbody>' +
+        courses
+          .map((course) => {
+            const available = course.seatsAvailable > 0;
+            const enrolled = enrolledIds.has(course.id);
+
+            let badge = '<span class="badge ok">' + course.seatsAvailable + ' of ' + course.seatsTotal + ' seats</span>';
+            if (!available) badge = '<span class="badge out">course full</span>';
+            if (enrolled) badge = '<span class="badge">enrolled</span>';
+
+            const action = enrolled
+              ? '<a href="/courses.html"><span class="hint">–</span></a>'
+              : '<button class="small" data-enroll="' + course.id + '"' + (available ? '' : ' disabled') + '>Enrol</button>';
+
+            return (
+              '<tr><td class="mono">' + ui.escapeHtml(course.code) + '</td>' +
+              '<td>' + ui.escapeHtml(course.title) + '</td>' +
+              '<td>' + ui.escapeHtml(course.instructor) + '</td>' +
+              '<td>' + course.credits + '</td>' +
+              '<td>' + badge + '</td>' +
+              '<td>' + action + '</td></tr>'
+            );
+          })
+          .join('') +
+        '</tbody></table>';
+
+      target.querySelectorAll('[data-enroll]').forEach((button) => {
+        button.addEventListener('click', () => enroll(button.dataset.enroll, button));
+      });
+    }
+
+    async function loadEnrollments() {
+      const { enrollments } = await api.request('/api/enrollments');
+      const target = document.getElementById('enrollments');
+      const active = enrollments.filter((enrollment) => !enrollment.droppedAt);
+
+      if (!active.length) {
+        target.innerHTML = '<p class="hint">No active enrolments.</p>';
+        return;
+      }
+
+      target.innerHTML =
+        '<table><thead><tr><th>Code</th><th>Course</th><th>Enrolled</th><th></th></tr></thead><tbody>' +
+        active
+          .map(
+            (enrollment) =>
+              '<tr><td class="mono">' + ui.escapeHtml(enrollment.courseCode) + '</td>' +
+              '<td>' + ui.escapeHtml(enrollment.courseTitle) + '</td>' +
+              '<td>' + new Date(enrollment.enrolledAt).toLocaleString() + '</td>' +
+              '<td><button class="secondary small" data-drop="' + enrollment.id + '">Drop</button></td></tr>',
+          )
+          .join('') +
+        '</tbody></table>';
+
+      target.querySelectorAll('[data-drop]').forEach((button) => {
+        button.addEventListener('click', () => dropEnrollment(button.dataset.drop, button));
+      });
+    }
+
+    async function refresh() {
+      await Promise.all([loadCourses(), loadEnrollments()]);
+    }
+
+    async function enroll(courseId, button) {
+      ui.hideNotice(notice);
+      button.disabled = true;
+      try {
+        await api.request('/api/courses/' + courseId + '/enrollments', { method: 'POST' });
+        ui.showNotice(notice, 'Enrolled.', 'success');
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+        button.disabled = false;
+      }
+    }
+
+    async function dropEnrollment(enrollmentId, button) {
+      ui.hideNotice(notice);
+      button.disabled = true;
+      try {
+        await api.request('/api/enrollments/' + enrollmentId + '/drop', { method: 'POST' });
+        ui.showNotice(notice, 'Course dropped.', 'success');
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+        button.disabled = false;
+      }
+    }
+
+    (async function () {
+      if (!api.requireSession()) return;
+      ui.renderNav('/courses.html');
+      try {
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Library · Profile</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Library App</div>
+    <nav id="nav"></nav>
+  </header>
+
+  <main>
+    <h1>Profile</h1>
+    <p class="sub">Name and email are stored by the auth service — saving here calls <span class="mono">PUT /users/{id}</span>.</p>
+
+    <div id="notice" class="notice"></div>
+
+    <div class="panel">
+      <h2>Edit name and email</h2>
+      <form id="profile-form">
+        <div class="field">
+          <label for="name">Name</label>
+          <input id="name" name="name" type="text" maxlength="100" required />
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" maxlength="254" required />
+        </div>
+        <button type="submit" id="save">Save changes</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h2>Account</h2>
+      <table>
+        <tbody>
+          <tr><th>User id (auth service)</th><td class="mono" id="meta-id">–</td></tr>
+          <tr><th>Created</th><td id="meta-created">–</td></tr>
+          <tr><th>Last updated</th><td id="meta-updated">–</td></tr>
+        </tbody>
+      </table>
+      <p class="hint" style="margin-top:12px">
+        Passwords are never handled by this app. Changing a password is done through the auth service.
+      </p>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const notice = document.getElementById('notice');
+    const form = document.getElementById('profile-form');
+    const saveButton = document.getElementById('save');
+
+    function render(user) {
+      document.getElementById('name').value = user.name;
+      document.getElementById('email').value = user.email;
+      document.getElementById('meta-id').textContent = user.id;
+      document.getElementById('meta-created').textContent = new Date(user.createdAt).toLocaleString();
+      document.getElementById('meta-updated').textContent = new Date(user.updatedAt).toLocaleString();
+    }
+
+    (async function () {
+      if (!api.requireSession()) return;
+      ui.renderNav('/profile.html');
+      try {
+        const { user } = await api.request('/api/profile');
+        api.setUser(user);
+        render(user);
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      }
+    })();
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      ui.hideNotice(notice);
+      saveButton.disabled = true;
+
+      try {
+        const { user } = await api.request('/api/profile', {
+          method: 'PUT',
+          body: {
+            name: document.getElementById('name').value.trim(),
+            email: document.getElementById('email').value.trim(),
+          },
+        });
+        api.setUser(user);
+        render(user);
+        ui.renderNav('/profile.html');
+        ui.showNotice(notice, 'Profile updated.', 'success');
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      } finally {
+        saveButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

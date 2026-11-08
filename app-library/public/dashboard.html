@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Library · Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Library App</div>
+    <nav id="nav"></nav>
+  </header>
+
+  <main>
+    <h1 id="greeting">Welcome</h1>
+    <p class="sub">Your library activity. The session is validated against the auth service on every load.</p>
+
+    <div id="notice" class="notice"></div>
+
+    <div class="grid" style="margin-bottom:18px">
+      <div class="stat">
+        <div class="value" id="active-count">–</div>
+        <div class="label">Active loans</div>
+      </div>
+      <div class="stat">
+        <div class="value" id="total-count">–</div>
+        <div class="label">Loans all time</div>
+      </div>
+      <div class="stat">
+        <div class="value" id="user-id">–</div>
+        <div class="label">Auth service user id</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Your open loans</h2>
+      <div id="loans">
+        <p class="hint">Loading…</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Quick actions</h2>
+      <div class="row">
+        <a href="/books.html"><button type="button">Browse books</button></a>
+        <a href="/profile.html"><button type="button" class="secondary">Edit profile</button></a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    (async function () {
+      if (!api.requireSession()) return;
+
+      ui.renderNav('/dashboard.html');
+      const notice = document.getElementById('notice');
+
+      try {
+        // Profile comes from auth-service (GET /users/{id} via the thin client).
+        const profile = await api.request('/api/profile');
+        api.setUser(profile.user);
+
+        const user = profile.user;
+        document.getElementById('greeting').textContent = 'Welcome, ' + user.name;
+        document.getElementById('user-id').textContent = user.id;
+        ui.renderNav('/dashboard.html');
+
+        const { loans } = await api.request('/api/loans');
+        const open = loans.filter((loan) => !loan.returnedAt);
+
+        document.getElementById('active-count').textContent = open.length;
+        document.getElementById('total-count').textContent = loans.length;
+
+        const target = document.getElementById('loans');
+        if (!open.length) {
+          target.innerHTML = '<p class="hint">No open loans. Head to the books list to borrow something.</p>';
+        } else {
+          target.innerHTML =
+            '<table><thead><tr><th>Book</th><th>Author</th><th>Borrowed</th><th></th></tr></thead><tbody>' +
+            open
+              .map(
+                (loan) =>
+                  '<tr><td>' + ui.escapeHtml(loan.bookTitle) + '</td>' +
+                  '<td>' + ui.escapeHtml(loan.bookAuthor) + '</td>' +
+                  '<td>' + new Date(loan.borrowedAt).toLocaleString() + '</td>' +
+                  '<td><a href="/books.html"><button class="secondary small" type="button">Return…</button></a></td></tr>',
+              )
+              .join('') +
+            '</tbody></table>';
+        }
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

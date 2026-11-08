@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Library · Books</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Library App</div>
+    <nav id="nav"></nav>
+  </header>
+
+  <main>
+    <h1>Books</h1>
+    <p class="sub">Catalogue and loans live in this app's own database (library.db). Only the sign-in is delegated.</p>
+
+    <div id="notice" class="notice"></div>
+
+    <div class="panel">
+      <h2>Catalogue</h2>
+      <div id="books"><p class="hint">Loading…</p></div>
+    </div>
+
+    <div class="panel">
+      <h2>Your loans</h2>
+      <div id="loans"><p class="hint">Loading…</p></div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const notice = document.getElementById('notice');
+
+    async function loadBooks() {
+      const { books } = await api.request('/api/books');
+      const target = document.getElementById('books');
+
+      target.innerHTML =
+        '<table><thead><tr><th>Title</th><th>Author</th><th>ISBN</th><th>Availability</th><th></th></tr></thead><tbody>' +
+        books
+          .map((book) => {
+            const available = book.availableCopies > 0;
+            const badge = available
+              ? '<span class="badge ok">' + book.availableCopies + ' of ' + book.copiesTotal + ' available</span>'
+              : '<span class="badge out">all ' + book.copiesTotal + ' on loan</span>';
+
+            return (
+              '<tr><td>' + ui.escapeHtml(book.title) + '</td>' +
+              '<td>' + ui.escapeHtml(book.author) + '</td>' +
+              '<td class="mono">' + ui.escapeHtml(book.isbn) + '</td>' +
+              '<td>' + badge + '</td>' +
+              '<td><button class="small" data-borrow="' + book.id + '"' + (available ? '' : ' disabled') + '>Borrow</button></td></tr>'
+            );
+          })
+          .join('') +
+        '</tbody></table>';
+
+      target.querySelectorAll('[data-borrow]').forEach((button) => {
+        button.addEventListener('click', () => borrow(button.dataset.borrow, button));
+      });
+    }
+
+    async function loadLoans() {
+      const { loans } = await api.request('/api/loans');
+      const target = document.getElementById('loans');
+      const open = loans.filter((loan) => !loan.returnedAt);
+
+      if (!open.length) {
+        target.innerHTML = '<p class="hint">No open loans.</p>';
+        return;
+      }
+
+      target.innerHTML =
+        '<table><thead><tr><th>Book</th><th>Borrowed</th><th></th></tr></thead><tbody>' +
+        open
+          .map(
+            (loan) =>
+              '<tr><td>' + ui.escapeHtml(loan.bookTitle) + '</td>' +
+              '<td>' + new Date(loan.borrowedAt).toLocaleString() + '</td>' +
+              '<td><button class="secondary small" data-return="' + loan.id + '">Return</button></td></tr>',
+          )
+          .join('') +
+        '</tbody></table>';
+
+      target.querySelectorAll('[data-return]').forEach((button) => {
+        button.addEventListener('click', () => returnLoan(button.dataset.return, button));
+      });
+    }
+
+    async function refresh() {
+      await Promise.all([loadBooks(), loadLoans()]);
+    }
+
+    async function borrow(bookId, button) {
+      ui.hideNotice(notice);
+      button.disabled = true;
+      try {
+        await api.request('/api/books/' + bookId + '/loans', { method: 'POST' });
+        ui.showNotice(notice, 'Book borrowed.', 'success');
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+        button.disabled = false;
+      }
+    }
+
+    async function returnLoan(loanId, button) {
+      ui.hideNotice(notice);
+      button.disabled = true;
+      try {
+        await api.request('/api/loans/' + loanId + '/return', { method: 'POST' });
+        ui.showNotice(notice, 'Book returned.', 'success');
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+        button.disabled = false;
+      }
+    }
+
+    (async function () {
+      if (!api.requireSession()) return;
+      ui.renderNav('/books.html');
+      try {
+        await refresh();
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

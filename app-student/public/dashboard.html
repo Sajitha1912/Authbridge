@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Student · Dashboard</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Student App</div>
+    <nav id="nav"></nav>
+  </header>
+
+  <main>
+    <h1 id="greeting">Welcome</h1>
+    <p class="sub">Your enrolment activity. The session is validated against the auth service on every load.</p>
+
+    <div id="notice" class="notice"></div>
+
+    <div class="panel">
+      <h2>Account (live from the auth service)</h2>
+      <table>
+        <tbody>
+          <tr><th>Name</th><td id="user-name">–</td></tr>
+          <tr><th>Email</th><td id="user-email">–</td></tr>
+          <tr><th>User id (auth service)</th><td class="mono" id="user-id">–</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid" style="margin-bottom:18px">
+      <div class="stat">
+        <div class="value" id="active-count">–</div>
+        <div class="label">Active courses</div>
+      </div>
+      <div class="stat">
+        <div class="value" id="total-count">–</div>
+        <div class="label">Enrolments all time</div>
+      </div>
+      <div class="stat">
+        <div class="value" id="credits-count">–</div>
+        <div class="label">Credits enrolled</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Your active courses</h2>
+      <div id="enrollments">
+        <p class="hint">Loading…</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Quick actions</h2>
+      <div class="row">
+        <a href="/courses.html"><button type="button">Browse courses</button></a>
+        <a href="/profile.html"><button type="button" class="secondary">Edit profile</button></a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/api.js"></script>
+  <script>
+    (async function () {
+      if (!api.requireSession()) return;
+
+      ui.renderNav('/dashboard.html');
+      const notice = document.getElementById('notice');
+
+      try {
+        // Profile comes from auth-service (GET /users/{id} via the thin client).
+        const profile = await api.request('/api/profile');
+        api.setUser(profile.user);
+
+        const user = profile.user;
+        document.getElementById('greeting').textContent = 'Welcome, ' + user.name;
+        document.getElementById('user-name').textContent = user.name;
+        document.getElementById('user-email').textContent = user.email;
+        document.getElementById('user-id').textContent = user.id;
+        ui.renderNav('/dashboard.html');
+
+        const { enrollments } = await api.request('/api/enrollments');
+        const active = enrollments.filter((enrollment) => !enrollment.droppedAt);
+
+        document.getElementById('active-count').textContent = active.length;
+        document.getElementById('total-count').textContent = enrollments.length;
+        document.getElementById('credits-count').textContent = active.reduce(
+          (sum, enrollment) => sum + enrollment.credits,
+          0,
+        );
+
+        const target = document.getElementById('enrollments');
+        if (!active.length) {
+          target.innerHTML = '<p class="hint">No active enrolments. Head to the courses list to enrol.</p>';
+        } else {
+          target.innerHTML =
+            '<table><thead><tr><th>Code</th><th>Course</th><th>Credits</th><th>Enrolled</th></tr></thead><tbody>' +
+            active
+              .map(
+                (enrollment) =>
+                  '<tr><td class="mono">' + ui.escapeHtml(enrollment.courseCode) + '</td>' +
+                  '<td>' + ui.escapeHtml(enrollment.courseTitle) + '</td>' +
+                  '<td>' + enrollment.credits + '</td>' +
+                  '<td>' + new Date(enrollment.enrolledAt).toLocaleString() + '</td></tr>',
+              )
+              .join('') +
+            '</tbody></table>';
+        }
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+      }
+    })();
+  </script>
+</body>
+</html>

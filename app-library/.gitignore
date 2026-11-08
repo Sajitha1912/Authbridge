@@ -1,0 +1,6 @@
+node_modules/
+.env
+library.db
+library.db-wal
+library.db-shm
+*.log

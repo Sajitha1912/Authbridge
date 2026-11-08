@@ -1,0 +1,16 @@
+{
+  "name": "soa-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SOA demo monorepo: one reusable Auth/User service consumed by two independent monoliths (app-library, app-student).",
+  "scripts": {
+    "start:all": "node scripts/start-all.js",
+    "screenshots": "node scripts/screenshots.js"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

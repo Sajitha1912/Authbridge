@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Library · Sign in</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <h1>Library App</h1>
+    <p class="sub">Sign in with your Auth/User service account.</p>
+
+    <div class="panel">
+      <div id="notice" class="notice"></div>
+
+      <form id="login-form">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" id="submit">Sign in</button>
+      </form>
+
+      <p class="hint" style="margin-top:14px">
+        Demo accounts: <span class="mono">ada@example.com</span> or
+        <span class="mono">alan@example.com</span> / <span class="mono">password123</span>
+      </p>
+      <p class="hint">This app has no login logic: the credentials are forwarded to the auth service.</p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // Already signed in? Skip the form.
+    if (api.getToken()) window.location.replace('/dashboard.html');
+
+    const form = document.getElementById('login-form');
+    const button = document.getElementById('submit');
+    const notice = document.getElementById('notice');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      ui.hideNotice(notice);
+      button.disabled = true;
+
+      try {
+        const session = await api.request('/api/session/login', {
+          method: 'POST',
+          body: {
+            email: document.getElementById('email').value.trim(),
+            password: document.getElementById('password').value,
+          },
+        });
+        api.setSession(session);
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        ui.showNotice(notice, ui.describeError(err), 'error');
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

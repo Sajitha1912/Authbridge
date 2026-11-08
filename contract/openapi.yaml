@@ -1,0 +1,461 @@
+openapi: 3.0.3
+
+info:
+  title: Auth / User Service
+  version: 1.0.0
+  description: >
+    Reusable authentication and user-profile service for the SOA demo.
+
+    This service is the single source of truth for credentials and user profiles.
+    It is consumed over HTTP by independent applications (e.g. app-library,
+    app-student). Applications never share a database with this service and must
+    not import its code; HTTP is the only integration surface.
+
+    Authentication uses a JWT bearer token. Tokens are issued by
+    `POST /auth/login` and are sent as `Authorization: Bearer <token>`.
+  contact:
+    name: SOA Demo
+
+servers:
+  - url: http://localhost:4000
+    description: Local development
+  - url: http://auth-service:4000
+    description: Docker compose network
+
+tags:
+  - name: Auth
+    description: Registration, login and token validation
+  - name: Users
+    description: User profile read and update
+  - name: System
+    description: Health and operational endpoints
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerUser
+      summary: Register a new user
+      description: >
+        Creates a new user account. The email must be unique across the service.
+        On success the user is created but no token is issued; call
+        `POST /auth/login` to obtain a token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              basic:
+                value:
+                  name: Ada Lovelace
+                  email: ada@example.com
+                  password: s3cret-pass
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                emailTaken:
+                  value:
+                    error:
+                      code: EMAIL_TAKEN
+                      message: Email is already registered
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: loginUser
+      summary: Log in and obtain a JWT
+      description: >
+        Verifies credentials and returns a signed JWT. The token identifies the
+        user via its `sub` claim and must be sent on protected endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              basic:
+                value:
+                  email: ada@example.com
+                  password: s3cret-pass
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                badCredentials:
+                  value:
+                    error:
+                      code: INVALID_CREDENTIALS
+                      message: Invalid email or password
+
+  /auth/validate:
+    get:
+      tags: [Auth]
+      operationId: validateToken
+      summary: Validate a token and return the current user
+      description: >
+        Validates the bearer token. Returns `200` with the user when the token is
+        valid, or `401` when the token is missing, malformed, expired or signed
+        with an unknown key. Services may use this as a lightweight "who am I".
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidateResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Get a user by id
+      description: Returns the public profile of a user. Requires a valid token.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      operationId: updateUser
+      summary: Update a user's name, email and/or password
+      description: >
+        Partially updates the user. At least one of `name`, `email` or `password`
+        must be supplied. Changing the email to one that is already registered
+        returns `409`. Requires a valid token.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+            examples:
+              renameOnly:
+                value:
+                  name: Ada Byron
+              changeEmail:
+                value:
+                  email: ada.byron@example.com
+              changePassword:
+                value:
+                  password: even-better-pass
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: The requested email is already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                emailTaken:
+                  value:
+                    error:
+                      code: EMAIL_TAKEN
+                      message: Email is already registered
+
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Service health check
+      description: Unauthenticated liveness/readiness probe used by the apps and by Docker.
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT issued by `POST /auth/login`. Send as
+        `Authorization: Bearer <token>`.
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: Numeric user identifier
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+      example: 1
+
+  responses:
+    BadRequest:
+      description: The request payload or path parameter is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            validation:
+              value:
+                error:
+                  code: VALIDATION_ERROR
+                  message: Request validation failed
+                  details:
+                    - field: password
+                      issue: must be at least 8 characters
+    Unauthorized:
+      description: Missing, malformed or expired token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            missingToken:
+              value:
+                error:
+                  code: UNAUTHORIZED
+                  message: Missing or invalid bearer token
+            expiredToken:
+              value:
+                error:
+                  code: TOKEN_EXPIRED
+                  message: Token has expired
+    NotFound:
+      description: The requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            userNotFound:
+              value:
+                error:
+                  code: USER_NOT_FOUND
+                  message: User not found
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          example: ada@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          example: s3cret-pass
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          example: ada@example.com
+        password:
+          type: string
+          format: password
+          example: s3cret-pass
+
+    UserUpdateRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      description: At least one field must be provided.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+
+    User:
+      type: object
+      required: [id, name, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: Ada Lovelace
+        email:
+          type: string
+          format: email
+          example: ada@example.com
+        createdAt:
+          type: string
+          format: date-time
+          example: '2026-01-01T12:00:00.000Z'
+        updatedAt:
+          type: string
+          format: date-time
+          example: '2026-01-01T12:00:00.000Z'
+
+    AuthResponse:
+      type: object
+      required: [token, tokenType, expiresIn, user]
+      properties:
+        token:
+          type: string
+          description: Signed JWT to send as a bearer token
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        tokenType:
+          type: string
+          enum: [Bearer]
+          example: Bearer
+        expiresIn:
+          type: integer
+          description: Token lifetime in seconds
+          example: 86400
+        user:
+          $ref: '#/components/schemas/User'
+
+    ValidateResponse:
+      type: object
+      required: [valid, user]
+      properties:
+        valid:
+          type: boolean
+          enum: [true]
+          example: true
+        user:
+          $ref: '#/components/schemas/User'
+
+    HealthResponse:
+      type: object
+      required: [status, service, version, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        service:
+          type: string
+          example: auth-service
+        version:
+          type: string
+          example: 1.0.0
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-01-01T12:00:00.000Z'
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable error code
+              enum:
+                - VALIDATION_ERROR
+                - INVALID_CREDENTIALS
+                - UNAUTHORIZED
+                - TOKEN_EXPIRED
+                - USER_NOT_FOUND
+                - EMAIL_TAKEN
+                - NOT_FOUND
+                - INTERNAL_ERROR
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable description
+              example: Request validation failed
+            details:
+              type: array
+              description: Optional field-level details (present for validation errors)
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  issue:
+                    type: string
